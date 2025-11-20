@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hand Tracking Test - Immersive Web Emulator</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        h1 {
+            color: #00bcd4;
+        }
+        #info {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        button {
+            background: #00bcd4;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0097a7;
+        }
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+        #status {
+            margin: 20px 0;
+            padding: 15px;
+            background: #333;
+            border-radius: 4px;
+        }
+        .success {
+            color: #4caf50;
+        }
+        .error {
+            color: #f44336;
+        }
+        .warning {
+            color: #ff9800;
+        }
+        code {
+            background: #444;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>🖐️ Hand Tracking Test - Immersive Web Emulator</h1>
+    
+    <div id="info">
+        <p><strong>Instructions:</strong></p>
+        <ol>
+            <li>Make sure the Immersive Web Emulator extension is installed and enabled for this page</li>
+            <li>Click "Start XR Session" to enter WebXR mode</li>
+            <li>Press <code>Ctrl+H</code> to enable hand tracking</li>
+            <li>Grant camera permissions when prompted</li>
+            <li>Move your hands in front of the camera</li>
+        </ol>
+        <p><strong>Note:</strong> This is a minimal test page. For a full 3D experience, use a complete WebXR application.</p>
+    </div>
+
+    <div>
+        <button id="startXR">Start XR Session</button>
+        <button id="toggleHandTracking" disabled>Toggle Hand Tracking (Ctrl+H)</button>
+        <button id="endXR" disabled>End XR Session</button>
+    </div>
+
+    <div id="status">
+        <h3>Status:</h3>
+        <div id="statusText">Ready</div>
+    </div>
+
+    <div id="handData">
+        <h3>Hand Tracking Data:</h3>
+        <div id="leftHand">Left Hand: No data</div>
+        <div id="rightHand">Right Hand: No data</div>
+        <div id="pinchData">Pinch Values: No data</div>
+    </div>
+
+    <script>
+        let xrSession = null;
+        let xrRefSpace = null;
+        let animationFrameId = null;
+
+        const statusText = document.getElementById('statusText');
+        const startXRButton = document.getElementById('startXR');
+        const endXRButton = document.getElementById('endXR');
+        const toggleHandTrackingButton = document.getElementById('toggleHandTracking');
+        const leftHandDiv = document.getElementById('leftHand');
+        const rightHandDiv = document.getElementById('rightHand');
+        const pinchDataDiv = document.getElementById('pinchData');
+
+        function updateStatus(message, type = 'normal') {
+            statusText.innerHTML = message;
+            statusText.className = type;
+            console.log(message);
+        }
+
+        // Check if WebXR is supported
+        if (!navigator.xr) {
+            updateStatus('WebXR not supported. Make sure the Immersive Web Emulator extension is installed and enabled.', 'error');
+            startXRButton.disabled = true;
+        }
+
+        // Check for hand tracking manager
+        function checkHandTrackingManager() {
+            if (window.handTrackingManager) {
+                updateStatus('Hand tracking manager detected! Press Ctrl+H to toggle.', 'success');
+                toggleHandTrackingButton.disabled = false;
+            } else {
+                updateStatus('Hand tracking manager not found. Make sure the extension is properly loaded.', 'warning');
+            }
+        }
+
+        // Check after a delay to allow extension to load
+        setTimeout(checkHandTrackingManager, 1000);
+
+        startXRButton.addEventListener('click', async () => {
+            try {
+                updateStatus('Requesting XR session with hand-tracking...');
+                
+                // Request an immersive-vr session with hand-tracking
+                xrSession = await navigator.xr.requestSession('immersive-vr', {
+                    requiredFeatures: ['local-floor'],
+                    optionalFeatures: ['hand-tracking']
+                });
+
+                updateStatus('XR Session started successfully!', 'success');
+                startXRButton.disabled = true;
+                endXRButton.disabled = false;
+                toggleHandTrackingButton.disabled = false;
+
+                // Set up reference space
+                xrRefSpace = await xrSession.requestReferenceSpace('local-floor');
+
+                // Start render loop
+                xrSession.requestAnimationFrame(onXRFrame);
+
+                // Handle session end
+                xrSession.addEventListener('end', () => {
+                    updateStatus('XR Session ended');
+                    startXRButton.disabled = false;
+                    endXRButton.disabled = true;
+                    xrSession = null;
+                    if (animationFrameId) {
+                        cancelAnimationFrame(animationFrameId);
+                    }
+                });
+
+            } catch (err) {
+                updateStatus(`Error starting XR session: ${err.message}`, 'error');
+            }
+        });
+
+        endXRButton.addEventListener('click', () => {
+            if (xrSession) {
+                xrSession.end();
+            }
+        });
+
+        toggleHandTrackingButton.addEventListener('click', async () => {
+            if (window.handTrackingManager) {
+                try {
+                    if (window.handTrackingManager.isActive()) {
+                        window.handTrackingManager.stopTracking();
+                        updateStatus('Hand tracking disabled', 'warning');
+                    } else {
+                        await window.handTrackingManager.startTracking();
+                        updateStatus('Hand tracking enabled! Move your hands in front of the camera.', 'success');
+                    }
+                } catch (err) {
+                    updateStatus(`Error toggling hand tracking: ${err.message}`, 'error');
+                }
+            } else {
+                updateStatus('Hand tracking manager not available', 'error');
+            }
+        });
+
+        // Keyboard shortcut
+        document.addEventListener('keydown', async (event) => {
+            if (event.ctrlKey && event.key === 'h') {
+                event.preventDefault();
+                toggleHandTrackingButton.click();
+            }
+        });
+
+        function onXRFrame(time, frame) {
+            xrSession.requestAnimationFrame(onXRFrame);
+
+            // Get input sources
+            const inputSources = xrSession.inputSources;
+            
+            let leftHandInfo = 'Left Hand: ';
+            let rightHandInfo = 'Right Hand: ';
+            let pinchInfo = 'Pinch Values: ';
+            
+            let foundHands = false;
+
+            for (const inputSource of inputSources) {
+                if (inputSource.hand) {
+                    foundHands = true;
+                    const handedness = inputSource.handedness;
+                    const hand = inputSource.hand;
+                    
+                    // Try to get wrist joint pose
+                    const wristJoint = hand.get('wrist');
+                    if (wristJoint) {
+                        const jointPose = frame.getJointPose(wristJoint, xrRefSpace);
+                        if (jointPose) {
+                            const pos = jointPose.transform.position;
+                            const handText = `${handedness}: Detected (wrist at ${pos.x.toFixed(3)}, ${pos.y.toFixed(3)}, ${pos.z.toFixed(3)})`;
+                            
+                            if (handedness === 'left') {
+                                leftHandInfo = handText;
+                            } else if (handedness === 'right') {
+                                rightHandInfo = handText;
+                            }
+                        }
+                    }
+
+                    // Get pinch value from gamepad
+                    if (inputSource.gamepad && inputSource.gamepad.buttons.length > 0) {
+                        const pinchValue = inputSource.gamepad.buttons[0].value;
+                        pinchInfo += `${handedness}: ${(pinchValue * 100).toFixed(0)}% `;
+                    }
+                }
+            }
+
+            if (!foundHands) {
+                leftHandInfo = 'Left Hand: Not detected';
+                rightHandInfo = 'Right Hand: Not detected';
+                pinchInfo = 'Pinch Values: No hands detected';
+            }
+
+            leftHandDiv.textContent = leftHandInfo;
+            rightHandDiv.textContent = rightHandInfo;
+            pinchDataDiv.textContent = pinchInfo;
+        }
+    </script>
+</body>
+</html>
