@@ -24,7 +24,7 @@ IWE supports most mainstream WebXR features and APIs, offering compatibility on 
 | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
 | [**WebXR Device API**](https://immersive-web.github.io/webxr/)                                               | ✅                                                                                      |
 | [**WebXR Gamepads Module**](https://immersive-web.github.io/webxr-gamepads-module/)                          | ✅                                                                                      |
-| [**WebXR Hand Input Module**](https://immersive-web.github.io/webxr-hand-input/)                             | ✅                                                                                      |
+| [**WebXR Hand Input Module**](https://immersive-web.github.io/webxr-hand-input/)                             | ✅ \* Real hand tracking via [MediaPipe Hands](./HAND_TRACKING.md)                      |
 | [**WebXR Augmented Reality Module**](https://immersive-web.github.io/webxr-ar-module/)                       | ✅                                                                                      |
 | [**WebXR Hit Test Module**](https://immersive-web.github.io/hit-test)                                        | ✅                                                                                      |
 | [**WebXR Plane Detection Module**](https://immersive-web.github.io/real-world-geometry/plane-detection.html) | ✅                                                                                      |
@@ -59,6 +59,19 @@ At this time, IWE is not supported on non-Chromium-based browsers. However, you 
 Alternatively, use one of the frameworks with IWER already built-in:
 
 - [React-Three/XR](https://pmndrs.github.io/xr/docs/getting-started/development-setup)
+
+## Hand Tracking
+
+IWE now supports **real-time hand tracking** using MediaPipe Hands! Control virtual hands in WebXR applications using your webcam.
+
+### Quick Start
+
+1. Open any WebXR application with hand tracking support
+2. Press **Ctrl+H** to enable hand tracking
+3. Grant camera permissions when prompted
+4. Move your hands in front of the camera to control virtual hands
+
+For detailed information, troubleshooting, and advanced usage, see the [Hand Tracking Guide](./HAND_TRACKING.md).
 
 ## License
 

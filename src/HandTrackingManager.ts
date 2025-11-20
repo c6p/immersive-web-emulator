@@ -247,32 +247,51 @@ export class HandTrackingManager {
 					Math.pow(thumbTip.z - indexTip.z, 2),
 			);
 			// Normalize pinch value (0 = pinched, 1 = open)
-			const pinchValue = Math.max(0, Math.min(1, pinchDistance * 10));
+			// Typical pinch distance ranges from 0.02 (pinched) to 0.15 (open)
+			const pinchValue = Math.max(
+				0,
+				Math.min(1, (pinchDistance - 0.02) / 0.13),
+			);
 			hand.updatePinchValue(1 - pinchValue);
 
-			// Update hand pose based on landmarks
-			this.updateHandJoints(hand, handLandmarks, isLeftHand);
+			// Create a custom pose from MediaPipe landmarks
+			const customPose = this.createHandPoseFromLandmarks(
+				handLandmarks,
+				isLeftHand,
+			);
+
+			// Update the hand pose by modifying the default pose
+			// This is a workaround since we can't directly set joint transforms
+			this.updateHandWithCustomPose(hand, customPose);
 		}
 	}
 
 	/**
-	 * Update individual hand joints from MediaPipe landmarks
+	 * Create a hand pose configuration from MediaPipe landmarks
 	 */
-	private updateHandJoints(
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		hand: any,
+	private createHandPoseFromLandmarks(
 		landmarks: NormalizedLandmark[],
 		isLeftHand: boolean,
-	): void {
+	): {
+		jointTransforms: Record<
+			string,
+			{ offsetMatrix: mat4; radius: number }
+		>;
+		gripOffsetMatrix?: mat4;
+	} {
+		const jointTransforms: Record<
+			string,
+			{ offsetMatrix: mat4; radius: number }
+		> = {};
+
 		// Get the wrist position as the reference point
 		const wrist = landmarks[0];
 
 		// Scale factor to convert normalized coordinates to world space
-		// This is a rough approximation - you may need to adjust this
-		const scale = 0.2;
+		const scale = 0.15; // Approximate hand size in meters
 
 		// Calculate transforms for each joint
-		for (let i = 0; i < landmarks.length; i++) {
+		for (let i = 0; i < landmarks.length && i < 25; i++) {
 			const landmark = landmarks[i];
 			const joint = MEDIAPIPE_TO_WEBXR_JOINT_MAP[i];
 
@@ -280,43 +299,65 @@ export class HandTrackingManager {
 				continue;
 			}
 
-			// Convert normalized coordinates to world space
-			// MediaPipe uses camera-relative coordinates (0-1 range)
-			// We need to transform these to the XR space
+			// Convert normalized coordinates to world space relative to wrist
 			const x = (landmark.x - wrist.x) * scale;
 			const y = -(landmark.y - wrist.y) * scale; // Flip Y axis
 			const z = -(landmark.z - wrist.z) * scale; // Flip Z axis
 
-			// Mirror for left hand
+			// For left hand, mirror X coordinate
 			const finalX = isLeftHand ? -x : x;
 
 			// Create position vector
 			const position = vec3.fromValues(finalX, y, z);
 
-			// Calculate orientation based on adjacent joints
+			// Calculate orientation based on bone direction
 			const rotation = this.calculateJointRotation(landmarks, i, isLeftHand);
 
 			// Create transform matrix
 			const matrix = mat4.create();
 			mat4.fromRotationTranslation(matrix, rotation, position);
 
-			// Update the joint transform
-			// Note: The actual API for updating joints may differ
-			// This is a simplified approach
-			if (hand[Symbol.for('hand_input')]) {
-				const handInput = hand[Symbol.for('hand_input')];
-				if (handInput.poses && handInput.poses[handInput.poseId]) {
-					const pose = handInput.poses[handInput.poseId];
-					if (pose.jointTransforms && pose.jointTransforms[joint]) {
-						pose.jointTransforms[joint].offsetMatrix = matrix;
-						pose.jointTransforms[joint].radius = 0.01; // Default radius
-					}
-				}
-			}
+			// Set joint transform with radius
+			jointTransforms[joint] = {
+				offsetMatrix: matrix,
+				radius: 0.008, // Default radius ~8mm
+			};
 		}
 
-		// Update the hand pose
-		hand.updateHandPose();
+		// Create grip offset matrix (wrist position)
+		const gripOffsetMatrix = mat4.create();
+
+		return { jointTransforms, gripOffsetMatrix };
+	}
+
+	/**
+	 * Update hand input with custom pose
+	 * This modifies the internal pose structure to apply MediaPipe transforms
+	 */
+	private updateHandWithCustomPose(
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		hand: any,
+		customPose: {
+			jointTransforms: Record<
+				string,
+				{ offsetMatrix: mat4; radius: number }
+			>;
+		},
+	): void {
+		// Access the internal hand input structure
+		const P_HAND_INPUT = Symbol.for('hand_input');
+		if (hand[P_HAND_INPUT]) {
+			const handInput = hand[P_HAND_INPUT];
+
+			// Replace the default pose with our custom pose
+			// This allows the system to still interpolate with the pinch pose
+			if (handInput.poses) {
+				handInput.poses.default = customPose;
+			}
+
+			// Trigger the hand pose update
+			hand.updateHandPose();
+		}
 	}
 
 	/**
